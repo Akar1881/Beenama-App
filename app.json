@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "beenama",
+    "slug": "beenama",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "beenama",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "linking": {
+      "schemes": ["beenama"],
+      "prefixes": ["beenama://"],
+      "config": {
+        "screens": {
+          "(tabs)/profile": "profile"
+        }
+      }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e0c5fbc1-68da-4f08-a54d-88346f53b5e6"
+      }
+    },
+    "owner": "akar1881",
+    "android": {
+      "package": "com.akar1881.beenama"
+    }
+  }
+}
