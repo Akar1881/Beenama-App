@@ -7,8 +7,8 @@ import { getAuthState, addToWatchlist, addToFavorites } from '../services/authSe
 import PosterCard from '../components/PosterCard';
 import ListsModal from '../components/ListsModal';
 
-const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/original';
-const TMDB_BACKDROP_URL = 'https://image.tmdb.org/t/p/original';
+const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/w500';
+const TMDB_BACKDROP_URL = 'https://image.tmdb.org/t/p/w780';
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function DetailsScreen() {

@@ -6,7 +6,7 @@ import { fetchDetails, fetchSeasonDetails } from '../../services/tmdbApi';
 import VideoPlayer from '../../components/Player/VideoPlayer';
 
 const { width: screenWidth } = Dimensions.get('window');
-const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/original';
+const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/w500';
 
 export default function WatchScreen() {
   const { id, type, title, poster, s, e } = useLocalSearchParams();
@@ -17,8 +17,9 @@ export default function WatchScreen() {
   const [showSeasonModal, setShowSeasonModal] = useState(false);
   const [currentEpisode, setCurrentEpisode] = useState(parseInt(e) || 1);
   const [playing, setPlaying] = useState(false);
-
-  const MOCK_HLS = 'https://filesamples.com/samples/video/mkv/sample_1280x720_surfing_with_audio.mkv';
+   // hls file
+   const MOCK_HLS = 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8';
+  
   const MOCK_SUB = 'https://gist.githubusercontent.com/samdutton/ca37f3adaf4e23679957b8083e061177/raw/e19399fbccbc069a2af4266e5120ae6bad62699a/sample.vtt';
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export default function WatchScreen() {
 
       <ScrollView style={styles.content}>
         {playing ? (
-          <View style={styles.playerWrapper}>
+          <View style={styles.iframeCard}>
             <VideoPlayer 
               source={MOCK_HLS} 
               subtitleUrl={MOCK_SUB}

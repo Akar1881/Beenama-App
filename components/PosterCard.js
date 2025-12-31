@@ -1,7 +1,7 @@
 import { View, Text, Image, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 
-const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/original';
+const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/w342';
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function PosterCard({ item, type = 'movie', size = 'medium' }) {
