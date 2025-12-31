@@ -34,7 +34,7 @@ import QualityMenu from './menus/qualityMenu';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-export default function VideoPlayer({ source, subtitleUrl, title }) {
+export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
   const videoRef = useRef(null);
   const [status, setStatus] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -55,6 +55,8 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
     delay: 0,
   });
 
+  const videoSource = typeof source === 'string' ? { uri: source } : source;
+
   useEffect(() => {
     if (subtitleUrl && subtitle) {
       fetchSubtitles(subtitleUrl);
@@ -65,7 +67,7 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
   }, [subtitleUrl, subtitle]);
 
   useEffect(() => {
-    if (parsedSubtitles.length > 0 && status.positionMillis !== undefined) {
+    if (parsedSubtitles.length > 0 && typeof status.positionMillis === 'number') {
       const currentTime = (status.positionMillis / 1000) - captionSettings.delay;
       const activeCue = parsedSubtitles.find(
         cue => currentTime >= cue.start && currentTime <= cue.end
@@ -145,7 +147,7 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
     Animated.timing(controlsOpacity, {
       toValue: 1,
       duration: 200,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start();
   };
 
@@ -154,24 +156,30 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
     Animated.timing(controlsOpacity, {
       toValue: 0,
       duration: 300,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(({ finished }) => {
       if (finished) setShowControls(false);
     });
   };
 
   const handleFullscreen = async () => {
-    if (isFullscreen) {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      setIsFullscreen(false);
-    } else {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-      setIsFullscreen(true);
+    try {
+      if (isFullscreen) {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        setIsFullscreen(false);
+      } else {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        setIsFullscreen(true);
+      }
+    } catch (e) {
+      console.warn('Orientation lock failed:', e);
+      // Still toggle state so UI updates
+      setIsFullscreen(!isFullscreen);
     }
   };
 
   const formatTime = (ms) => {
-    if (!ms) return '00:00';
+    if (!ms || typeof ms !== 'number') return '00:00';
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -179,7 +187,7 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
   };
 
   const skipForward = async () => {
-    if (videoRef.current && status.positionMillis !== undefined) {
+    if (videoRef.current && typeof status.positionMillis === 'number') {
       try {
         const newPosition = status.positionMillis + 10000;
         await videoRef.current.setPositionAsync(newPosition);
@@ -193,7 +201,7 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
   };
 
   const skipBackward = async () => {
-    if (videoRef.current && status.positionMillis !== undefined) {
+    if (videoRef.current && typeof status.positionMillis === 'number') {
       try {
         const newPosition = Math.max(0, status.positionMillis - 10000);
         await videoRef.current.setPositionAsync(newPosition);
@@ -272,13 +280,13 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
         <Video
           ref={videoRef}
           style={styles.videoElement}
-          source={source}
+          source={videoSource}
           resizeMode={ResizeMode.STRETCH}
-          videoStyle={{
+          videoStyle={Platform.OS === 'web' ? {
             width: '100%',
             height: '100%',
             objectFit: 'fill',
-          }}
+          } : {}}
           shouldPlay
           onPlaybackStatusUpdate={setStatus}
           progressUpdateIntervalMillis={500}
@@ -291,6 +299,14 @@ export default function VideoPlayer({ source, subtitleUrl, title }) {
         >
           {showControls && (
             <Animated.View style={[styles.controlsOverlay, { opacity: controlsOpacity }]}>
+              {/* Top Bar / Back Button */}
+              <View style={styles.topBar}>
+                <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+                  <RotateCcw color="#fff" size={24} style={{ transform: [{ rotate: '90deg' }] }} />
+                </TouchableOpacity>
+                <Text style={styles.topTitle} numberOfLines={1}>{title}</Text>
+              </View>
+
               <View style={styles.centerControls}>
                 <TouchableOpacity onPress={skipBackward} style={styles.iconBtn}>
                   <RotateCcw color="#fff" size={32} />
@@ -462,6 +478,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: screenWidth > 600 ? 60 : 30,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 40 : 16,
+  },
+  backBtn: {
+    padding: 8,
+    marginRight: 8,
+  },
+  topTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
   },
   iconBtn: {
     padding: 10,
