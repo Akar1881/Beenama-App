@@ -186,7 +186,7 @@ export const getRequestTokenUrl = async () => {
   if (token) {
     // Detect if running on web or mobile/app
     let redirectUrl;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location) {
       // Web environment - use http localhost
       redirectUrl = window.location.origin + '/profile';
     } else {

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, FlatList, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, FlatList, Modal, Platform, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Play, ChevronDown, Star, Calendar, Clock } from 'lucide-react-native';
 import { fetchDetails, fetchSeasonDetails } from '../../services/tmdbApi';
 import VideoPlayer from '../../components/Player/VideoPlayer';
+import { getStreams } from '../../scraper/vidlink';
 
 const { width: screenWidth } = Dimensions.get('window');
 const TMDB_IMAGE_URL = 'https://image.tmdb.org/t/p/w500';
@@ -17,8 +18,12 @@ export default function WatchScreen() {
   const [showSeasonModal, setShowSeasonModal] = useState(false);
   const [currentEpisode, setCurrentEpisode] = useState(parseInt(e) || 1);
   const [playing, setPlaying] = useState(false);
-   // hls file
-   const MOCK_HLS = 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8';
+  const [availableStreams, setAvailableStreams] = useState([]);
+  const [availableSubtitles, setAvailableSubtitles] = useState([]);
+  const [selectedStream, setSelectedStream] = useState(null);
+  const [selectedSubtitle, setSelectedSubtitle] = useState(null);
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [isScraping, setIsScraping] = useState(false);
   
   const MOCK_SUB = 'https://gist.githubusercontent.com/samdutton/ca37f3adaf4e23679957b8083e061177/raw/e19399fbccbc069a2af4266e5120ae6bad62699a/sample.vtt';
 
@@ -40,6 +45,10 @@ export default function WatchScreen() {
     setSelectedSeason(seasonNumber);
     setCurrentEpisode(1);
     setPlaying(false);
+    setStreamUrl(null);
+    setSelectedStream(null);
+    setAvailableStreams([]);
+    setAvailableSubtitles([]);
     updateParams(seasonNumber, 1);
     setShowSeasonModal(false);
   };
@@ -47,6 +56,10 @@ export default function WatchScreen() {
   const handleEpisodeSelect = (episodeNumber) => {
     setCurrentEpisode(episodeNumber);
     setPlaying(false);
+    setStreamUrl(null);
+    setSelectedStream(null);
+    setAvailableStreams([]);
+    setAvailableSubtitles([]);
     updateParams(selectedSeason, episodeNumber);
   };
 
@@ -121,6 +134,51 @@ export default function WatchScreen() {
     );
   };
 
+  const handleWatchPress = async () => {
+    setIsScraping(true);
+    try {
+      const { streams, subtitles } = await getStreams(id, type, selectedSeason, currentEpisode);
+      if (streams && streams.length > 0) {
+        setAvailableStreams(streams);
+        setAvailableSubtitles(subtitles);
+        const firstStream = streams[0];
+        setSelectedStream(firstStream);
+        setStreamUrl(firstStream.url);
+        
+        if (subtitles.length > 0) {
+          const engSub = subtitles.find(s => s.language.toLowerCase().includes('eng')) || subtitles[0];
+          setSelectedSubtitle(engSub);
+        }
+        
+        setPlaying(true);
+      } else {
+        alert('No streams found for this content.');
+      }
+    } catch (error) {
+      console.error('Scraping error:', error);
+      alert('Failed to find streams.');
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
+  const handleQualityChange = (quality) => {
+    const stream = availableStreams.find(s => s.quality === quality);
+    if (stream) {
+      setSelectedStream(stream);
+      setStreamUrl(stream.url);
+    }
+  };
+
+  const handleSubtitleChange = (subId) => {
+    if (subId === 'off') {
+      setSelectedSubtitle(null);
+    } else {
+      const sub = availableSubtitles.find(s => s.id === subId);
+      if (sub) setSelectedSubtitle(sub);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -131,13 +189,17 @@ export default function WatchScreen() {
       </View>
 
       <ScrollView style={styles.content}>
-        {playing ? (
+        {playing && streamUrl ? (
           <View style={styles.iframeCard}>
             <VideoPlayer 
-              source={MOCK_HLS} 
-              subtitleUrl={MOCK_SUB}
+              source={selectedStream?.headers ? { uri: streamUrl, headers: selectedStream.headers } : { uri: streamUrl }} 
+              subtitleUrl={selectedSubtitle?.url || null}
               title={type === 'tv' ? `${title} - S${selectedSeason}E${currentEpisode}` : title}
               onBack={() => setPlaying(false)}
+              availableQualities={availableStreams.map(s => s.quality)}
+              availableSubtitles={availableSubtitles}
+              onQualityChange={handleQualityChange}
+              onSubtitleChange={handleSubtitleChange}
             />
           </View>
         ) : (
@@ -145,12 +207,21 @@ export default function WatchScreen() {
             <Image 
               source={{ uri: `${TMDB_IMAGE_URL}${poster}` }} 
               style={styles.iframeImage} 
+              blurRadius={isScraping ? 10 : 0}
             />
             <View style={styles.iframeOverlay}>
-              <TouchableOpacity style={styles.watchCenterBtn} onPress={() => setPlaying(true)}>
-                <Play size={32} color="#000" fill="#000" />
+              <TouchableOpacity 
+                style={[styles.watchCenterBtn, isScraping && { opacity: 0.7 }]} 
+                onPress={handleWatchPress}
+                disabled={isScraping}
+              >
+                {isScraping ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Play size={32} color="#000" fill="#000" />
+                )}
                 <Text style={styles.watchCenterText}>
-                  WATCH {type === 'tv' ? `S:${selectedSeason} E:${currentEpisode}` : ''}
+                  {isScraping ? 'SCRAPING...' : `WATCH ${type === 'tv' ? `S:${selectedSeason} E:${currentEpisode}` : ''}`}
                 </Text>
               </TouchableOpacity>
             </View>

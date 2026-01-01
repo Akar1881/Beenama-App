@@ -53,10 +53,10 @@ export default function ProfileScreen() {
       console.log('Login URL:', url);
       if (url) {
         // Use window.open for web, Linking for native
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && window.location) {
           window.open(url, '_blank');
         } else {
-          Linking.openURL(url);
+          await Linking.openURL(url);
         }
       } else {
         console.error('No URL generated for login');

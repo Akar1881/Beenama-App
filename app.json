@@ -18,15 +18,6 @@
     "plugins": [
       "expo-router"
     ],
-    "linking": {
-      "schemes": ["beenama"],
-      "prefixes": ["beenama://"],
-      "config": {
-        "screens": {
-          "(tabs)/profile": "profile"
-        }
-      }
-    },
     "extra": {
       "router": {},
       "eas": {

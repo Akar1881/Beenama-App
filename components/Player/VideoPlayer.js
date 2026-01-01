@@ -34,7 +34,7 @@ import QualityMenu from './menus/qualityMenu';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
+export default function VideoPlayer({ source, subtitleUrl, title, onBack, availableQualities = [], availableSubtitles = [], onQualityChange, onSubtitleChange }) {
   const videoRef = useRef(null);
   const [status, setStatus] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -43,7 +43,7 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
   const [isMuted, setIsMuted] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [quality, setQuality] = useState('auto');
+  const [quality, setQuality] = useState('Auto');
   const [subtitle, setSubtitle] = useState(null);
   const [parsedSubtitles, setParsedSubtitles] = useState([]);
   const [currentSubtitleText, setCurrentSubtitleText] = useState('');
@@ -75,6 +75,12 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
       setCurrentSubtitleText(activeCue ? activeCue.text : '');
     }
   }, [status.positionMillis, parsedSubtitles, captionSettings.delay]);
+
+  useEffect(() => {
+    if (source) {
+      console.log('[VideoPlayer] Source changed:', source);
+    }
+  }, [source]);
 
   const fetchSubtitles = async (url) => {
     try {
@@ -165,10 +171,14 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
   const handleFullscreen = async () => {
     try {
       if (isFullscreen) {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        if (Platform.OS !== 'web') {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
         setIsFullscreen(false);
       } else {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        if (Platform.OS !== 'web') {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
+        }
         setIsFullscreen(true);
       }
     } catch (e) {
@@ -247,9 +257,10 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
         return (
           <SubtitlesMenu
             currentSubtitle={subtitle}
-            availableSubtitles={[{ id: 1, label: 'English' }, { id: 2, label: 'Arabic' }]}
+            availableSubtitles={availableSubtitles.length > 0 ? availableSubtitles : [{ id: 'off', label: 'Off' }]}
             onSelect={(s) => {
               setSubtitle(s);
+              if (onSubtitleChange) onSubtitleChange(s);
               setActiveMenu(null);
             }}
             onBack={() => setActiveMenu(null)}
@@ -259,9 +270,10 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
         return (
           <QualityMenu
             currentQuality={quality}
-            availableQualities={['1080p', '720p', '480p']}
+            availableQualities={availableQualities.length > 0 ? availableQualities : ['Auto']}
             onSelect={(q) => {
               setQuality(q);
+              if (onQualityChange) onQualityChange(q);
               setActiveMenu(null);
             }}
             onBack={() => setActiveMenu(null)}
@@ -279,7 +291,7 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack }) {
       <View style={styles.videoWrapper}>
         <Video
           ref={videoRef}
-          style={styles.videoElement}
+          style={isFullscreen ? styles.videoElementFullscreen : styles.videoElement}
           source={videoSource}
           resizeMode={ResizeMode.STRETCH}
           videoStyle={Platform.OS === 'web' ? {
@@ -454,9 +466,10 @@ const styles = StyleSheet.create({
   },
   fullscreenContainer: {
     ...StyleSheet.absoluteFillObject,
-    width: screenHeight,
-    height: screenWidth,
+    backgroundColor: '#000',
     zIndex: 9999,
+    width: Platform.OS === 'web' ? '100vw' : '100%',
+    height: Platform.OS === 'web' ? '100vh' : '100%',
   },
   videoWrapper: {
     ...StyleSheet.absoluteFillObject,
@@ -465,6 +478,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   videoElement: {
+    width: '100%',
+    height: '100%',
+  },
+  videoElementFullscreen: {
     width: '100%',
     height: '100%',
   },
