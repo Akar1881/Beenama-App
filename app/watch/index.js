@@ -24,6 +24,8 @@ export default function WatchScreen() {
   const [selectedSubtitle, setSelectedSubtitle] = useState(null);
   const [streamUrl, setStreamUrl] = useState(null);
   const [isScraping, setIsScraping] = useState(false);
+  const [savedPositions, setSavedPositions] = useState({});
+  const [showFullscreenModal, setShowFullscreenModal] = useState(false);
   
   const MOCK_SUB = 'https://gist.githubusercontent.com/samdutton/ca37f3adaf4e23679957b8083e061177/raw/e19399fbccbc069a2af4266e5120ae6bad62699a/sample.vtt';
 
@@ -196,11 +198,17 @@ export default function WatchScreen() {
               source={selectedStream?.headers ? { uri: streamUrl, headers: selectedStream.headers } : { uri: streamUrl }} 
               subtitleUrl={selectedSubtitle?.url || null}
               title={type === 'tv' ? `${title} - S${selectedSeason}E${currentEpisode}` : title}
-              onBack={() => setPlaying(false)}
+              onBack={() => { setPlaying(false); setShowFullscreenModal(false); }}
               availableQualities={availableStreams.map(s => s.quality)}
               availableSubtitles={availableSubtitles}
               onQualityChange={handleQualityChange}
               onSubtitleChange={handleSubtitleChange}
+              initialPositionMillis={savedPositions[`${selectedSeason}-${currentEpisode}`] || 0}
+              onPositionChange={(ms) => {
+                const key = `${selectedSeason}-${currentEpisode}`;
+                setSavedPositions(prev => ({ ...prev, [key]: ms }));
+              }}
+              onFullscreenChange={(isFs) => setShowFullscreenModal(!!isFs)}
             />
           </View>
         ) : (
@@ -280,6 +288,17 @@ export default function WatchScreen() {
             </ScrollView>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={showFullscreenModal}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={() => setShowFullscreenModal(false)}
+      >
+        <View style={styles.fullscreenModal}>
+          <Text style={styles.fullscreenModalText}>{type === 'tv' ? `${title} - S${selectedSeason}E${currentEpisode}` : title}</Text>
+        </View>
       </Modal>
     </View>
   );
@@ -477,6 +496,18 @@ const styles = StyleSheet.create({
   },
   selectedSeasonItemText: {
     color: '#fff',
+    fontWeight: '800',
+  },
+  fullscreenModal: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  fullscreenModalText: {
+    color: '#fff',
+    fontSize: 20,
     fontWeight: '800',
   },
 });

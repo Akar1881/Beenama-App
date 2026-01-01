@@ -34,7 +34,7 @@ import QualityMenu from './menus/qualityMenu';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-export default function VideoPlayer({ source, subtitleUrl, title, onBack, availableQualities = [], availableSubtitles = [], onQualityChange, onSubtitleChange }) {
+export default function VideoPlayer({ source, subtitleUrl, title, onBack, availableQualities = [], availableSubtitles = [], onQualityChange, onSubtitleChange, initialPositionMillis = 0, onPositionChange, onFullscreenChange }) {
   const videoRef = useRef(null);
   const [status, setStatus] = useState({
     isPlaying: true,
@@ -136,6 +136,10 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
   };
 
   useEffect(() => {
+    if (typeof onFullscreenChange === 'function') onFullscreenChange(isFullscreen);
+  }, [isFullscreen]);
+
+  useEffect(() => {
     if (Platform.OS === 'web') {
       const handleFullscreenChange = () => {
         setIsFullscreen(!!document.fullscreenElement);
@@ -172,11 +176,13 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
   };
 
   const onProgress = (data) => {
+    const pos = data.currentTime * 1000;
     setStatus(prev => ({
       ...prev,
-      positionMillis: data.currentTime * 1000,
+      positionMillis: pos,
       durationMillis: data.seekableDuration * 1000 || prev.durationMillis
     }));
+    if (typeof onPositionChange === 'function') onPositionChange(pos);
   };
 
   const onLoad = (data) => {
@@ -184,7 +190,23 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
       ...prev,
       durationMillis: data.duration * 1000
     }));
+    // seek to initial position if provided
+    try {
+      if (initialPositionMillis && videoRef.current && typeof videoRef.current.seek === 'function') {
+        videoRef.current.seek(initialPositionMillis / 1000);
+        setStatus(prev => ({ ...prev, positionMillis: initialPositionMillis }));
+      }
+    } catch (e) {
+      console.warn('Seek to initial position failed', e);
+    }
   };
+
+  useEffect(() => {
+    // if initialPositionMillis updates, seek to it (e.g., when resuming)
+    if (initialPositionMillis && videoRef.current && typeof videoRef.current.seek === 'function') {
+      try { videoRef.current.seek(initialPositionMillis / 1000); } catch (e) { }
+    }
+  }, [initialPositionMillis, source]);
 
   const renderActiveMenu = () => {
     switch (activeMenu) {
