@@ -139,6 +139,7 @@ export default function WatchScreen() {
     try {
       const { streams, subtitles } = await getStreams(id, type, selectedSeason, currentEpisode);
       if (streams && streams.length > 0) {
+        // Ensure headers are preserved for playback in expo-av
         setAvailableStreams(streams);
         setAvailableSubtitles(subtitles);
         const firstStream = streams[0];

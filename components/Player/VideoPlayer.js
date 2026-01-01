@@ -9,7 +9,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import Video from 'react-native-video';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import Slider from '@react-native-community/slider';
 import {
@@ -36,7 +36,12 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function VideoPlayer({ source, subtitleUrl, title, onBack, availableQualities = [], availableSubtitles = [], onQualityChange, onSubtitleChange }) {
   const videoRef = useRef(null);
-  const [status, setStatus] = useState({});
+  const [status, setStatus] = useState({
+    isPlaying: true,
+    positionMillis: 0,
+    durationMillis: 0,
+  });
+  const [seekingPosition, setSeekingPosition] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [volume, setVolume] = useState(1.0);
@@ -45,87 +50,8 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [quality, setQuality] = useState('Auto');
   const [subtitle, setSubtitle] = useState(null);
-  const [parsedSubtitles, setParsedSubtitles] = useState([]);
-  const [currentSubtitleText, setCurrentSubtitleText] = useState('');
-  const [captionSettings, setCaptionSettings] = useState({
-    color: '#FFFFFF',
-    size: 'M',
-    backgroundCapacity: '50%',
-    position: 10,
-    delay: 0,
-  });
 
   const videoSource = typeof source === 'string' ? { uri: source } : source;
-
-  useEffect(() => {
-    if (subtitleUrl && subtitle) {
-      fetchSubtitles(subtitleUrl);
-    } else {
-      setParsedSubtitles([]);
-      setCurrentSubtitleText('');
-    }
-  }, [subtitleUrl, subtitle]);
-
-  useEffect(() => {
-    if (parsedSubtitles.length > 0 && typeof status.positionMillis === 'number') {
-      const currentTime = (status.positionMillis / 1000) - captionSettings.delay;
-      const activeCue = parsedSubtitles.find(
-        cue => currentTime >= cue.start && currentTime <= cue.end
-      );
-      setCurrentSubtitleText(activeCue ? activeCue.text : '');
-    }
-  }, [status.positionMillis, parsedSubtitles, captionSettings.delay]);
-
-  useEffect(() => {
-    if (source) {
-      console.log('[VideoPlayer] Source changed:', source);
-    }
-  }, [source]);
-
-  const fetchSubtitles = async (url) => {
-    try {
-      const response = await fetch(url);
-      const text = await response.text();
-      parseVTT(text);
-    } catch (e) {
-      console.warn('Failed to fetch subtitles:', e);
-    }
-  };
-
-  const parseVTT = (data) => {
-    const cues = [];
-    const lines = data.replace(/\r/g, '').split('\n');
-    let currentCue = null;
-
-    const timeRegex = /(\d{2}:\d{2}:\d{2}.\d{3}) --> (\d{2}:\d{2}:\d{2}.\d{3})/;
-
-    lines.forEach(line => {
-      const match = timeRegex.exec(line);
-      if (match) {
-        if (currentCue) cues.push(currentCue);
-        currentCue = {
-          start: parseVttTime(match[1]),
-          end: parseVttTime(match[2]),
-          text: ''
-        };
-      } else if (currentCue && line.trim() !== '' && !line.includes('WEBVTT')) {
-        currentCue.text += (currentCue.text ? '\n' : '') + line.trim();
-      }
-    });
-    if (currentCue) cues.push(currentCue);
-    setParsedSubtitles(cues);
-  };
-
-  const parseVttTime = (timeStr) => {
-    const parts = timeStr.split(':');
-    const secondsParts = parts[2].split('.');
-    return (
-      parseInt(parts[0]) * 3600 +
-      parseInt(parts[1]) * 60 +
-      parseInt(secondsParts[0]) +
-      parseInt(secondsParts[1]) / 1000
-    );
-  };
 
   const controlsOpacity = useRef(new Animated.Value(1)).current;
   const timeoutRef = useRef(null);
@@ -169,24 +95,55 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
   };
 
   const handleFullscreen = async () => {
-    try {
-      if (isFullscreen) {
-        if (Platform.OS !== 'web') {
+    if (Platform.OS === 'web') {
+      try {
+        const elem = document.fullscreenElement;
+        if (!elem) {
+          const container = document.getElementById('video-player-root');
+          if (container && container.requestFullscreen) {
+            await container.requestFullscreen();
+            if (screen.orientation && screen.orientation.lock) {
+              await screen.orientation.lock('landscape-primary').catch(() => {});
+            }
+            setIsFullscreen(true);
+          }
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+            if (screen.orientation && screen.orientation.unlock) {
+              screen.orientation.unlock();
+            }
+            setIsFullscreen(false);
+          }
+        }
+      } catch (e) {
+        console.warn('Fullscreen API failed:', e);
+        setIsFullscreen(!isFullscreen);
+      }
+    } else {
+      try {
+        if (!isFullscreen) {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
+        } else {
           await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         }
-        setIsFullscreen(false);
-      } else {
-        if (Platform.OS !== 'web') {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
-        }
-        setIsFullscreen(true);
+        setIsFullscreen(!isFullscreen);
+      } catch (e) {
+        console.warn('Orientation lock failed:', e);
+        setIsFullscreen(!isFullscreen);
       }
-    } catch (e) {
-      console.warn('Orientation lock failed:', e);
-      // Still toggle state so UI updates
-      setIsFullscreen(!isFullscreen);
     }
   };
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleFullscreenChange = () => {
+        setIsFullscreen(!!document.fullscreenElement);
+      };
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+      return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }
+  }, []);
 
   const formatTime = (ms) => {
     if (!ms || typeof ms !== 'number') return '00:00';
@@ -196,32 +153,37 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const skipForward = async () => {
-    if (videoRef.current && typeof status.positionMillis === 'number') {
-      try {
-        const newPosition = status.positionMillis + 10000;
-        await videoRef.current.setPositionAsync(newPosition);
-        if (Platform.OS === 'web') {
-          setStatus(prev => ({ ...prev, positionMillis: newPosition }));
-        }
-      } catch (e) {
-        console.warn('Seek failed:', e);
-      }
+  const skipForward = () => {
+    if (videoRef.current) {
+      const newPosition = status.positionMillis + 10000;
+      setSeekingPosition(newPosition);
+      videoRef.current.seek(newPosition / 1000);
+      setTimeout(() => setSeekingPosition(null), 500);
     }
   };
 
-  const skipBackward = async () => {
-    if (videoRef.current && typeof status.positionMillis === 'number') {
-      try {
-        const newPosition = Math.max(0, status.positionMillis - 10000);
-        await videoRef.current.setPositionAsync(newPosition);
-        if (Platform.OS === 'web') {
-          setStatus(prev => ({ ...prev, positionMillis: newPosition }));
-        }
-      } catch (e) {
-        console.warn('Seek failed:', e);
-      }
+  const skipBackward = () => {
+    if (videoRef.current) {
+      const newPosition = Math.max(0, status.positionMillis - 10000);
+      setSeekingPosition(newPosition);
+      videoRef.current.seek(newPosition / 1000);
+      setTimeout(() => setSeekingPosition(null), 500);
     }
+  };
+
+  const onProgress = (data) => {
+    setStatus(prev => ({
+      ...prev,
+      positionMillis: data.currentTime * 1000,
+      durationMillis: data.seekableDuration * 1000 || prev.durationMillis
+    }));
+  };
+
+  const onLoad = (data) => {
+    setStatus(prev => ({
+      ...prev,
+      durationMillis: data.duration * 1000
+    }));
   };
 
   const renderActiveMenu = () => {
@@ -239,7 +201,6 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
             currentSpeed={playbackSpeed}
             onSelect={(s) => {
               setPlaybackSpeed(s);
-              if (videoRef.current) videoRef.current.setRateAsync(s, true);
               setActiveMenu('settings');
             }}
             onBack={() => setActiveMenu('settings')}
@@ -248,8 +209,8 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
       case 'captions':
         return (
           <CaptionsMenu
-            settings={captionSettings}
-            onUpdate={(update) => setCaptionSettings(prev => ({ ...prev, ...update }))}
+            settings={{}}
+            onUpdate={() => {}}
             onBack={() => setActiveMenu('settings')}
           />
         );
@@ -284,24 +245,43 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
     }
   };
 
+  const selectedTextTrack = subtitleUrl && subtitle ? {
+    type: 'title',
+    value: subtitle.label
+  } : undefined;
+
+  const textTracks = availableSubtitles
+    .filter(s => s.id !== 'off')
+    .map(s => ({
+      title: s.label,
+      language: s.language || 'en',
+      type: 'text/vtt',
+      uri: s.url
+    }));
+
   return (
-    <View style={[styles.container, isFullscreen && styles.fullscreenContainer]}>
+    <View 
+      id={Platform.OS === 'web' ? 'video-player-root' : undefined}
+      style={[styles.container, isFullscreen && styles.fullscreenContainer]}
+    >
       <StatusBar hidden={isFullscreen} />
       
       <View style={styles.videoWrapper}>
         <Video
           ref={videoRef}
-          style={isFullscreen ? styles.videoElementFullscreen : styles.videoElement}
           source={videoSource}
-          resizeMode={ResizeMode.STRETCH}
-          videoStyle={Platform.OS === 'web' ? {
-            width: '100%',
-            height: '100%',
-            objectFit: 'fill',
-          } : {}}
-          shouldPlay
-          onPlaybackStatusUpdate={setStatus}
-          progressUpdateIntervalMillis={500}
+          style={isFullscreen && Platform.OS !== 'web' ? styles.videoElementFullscreenNative : (isFullscreen ? styles.videoElementFullscreen : styles.videoElement)}
+          resizeMode="contain"
+          paused={!status.isPlaying}
+          volume={isMuted ? 0 : volume}
+          rate={playbackSpeed}
+          onProgress={onProgress}
+          onLoad={onLoad}
+          selectedTextTrack={selectedTextTrack}
+          textTracks={textTracks}
+          playInBackground={false}
+          playWhenInactive={false}
+          controls={false}
         />
 
         <TouchableOpacity
@@ -311,7 +291,6 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
         >
           {showControls && (
             <Animated.View style={[styles.controlsOverlay, { opacity: controlsOpacity }]}>
-              {/* Top Bar / Back Button */}
               <View style={styles.topBar}>
                 <TouchableOpacity onPress={onBack} style={styles.backBtn}>
                   <RotateCcw color="#fff" size={24} style={{ transform: [{ rotate: '90deg' }] }} />
@@ -324,7 +303,7 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
                   <RotateCcw color="#fff" size={32} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => status.isPlaying ? videoRef.current.pauseAsync() : videoRef.current.playAsync()}
+                  onPress={() => setStatus(prev => ({ ...prev, isPlaying: !prev.isPlaying }))}
                   style={[styles.iconBtn, styles.playBtn]}
                 >
                   {status.isPlaying ? <Pause color="#fff" size={36} fill="#fff" /> : <Play color="#fff" size={36} fill="#fff" />}
@@ -340,16 +319,11 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
                     style={styles.slider}
                     minimumValue={0}
                     maximumValue={status.durationMillis || 1}
-                    value={status.positionMillis || 0}
-                    onSlidingComplete={async (value) => {
-                      try {
-                        await videoRef.current.setPositionAsync(value);
-                        if (Platform.OS === 'web') {
-                          setStatus(prev => ({ ...prev, positionMillis: value }));
-                        }
-                      } catch (e) {
-                        console.warn('Seek failed:', e);
-                      }
+                    value={seekingPosition !== null ? seekingPosition : (status.positionMillis || 0)}
+                    onValueChange={(value) => setSeekingPosition(value)}
+                    onSlidingComplete={(value) => {
+                      videoRef.current.seek(value / 1000);
+                      setTimeout(() => setSeekingPosition(null), 500);
                     }}
                     minimumTrackTintColor="#fff"
                     maximumTrackTintColor="rgba(255,255,255,0.3)"
@@ -359,20 +333,12 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
 
                 <View style={styles.bottomRow}>
                   <View style={styles.bottomLeft}>
-                    <TouchableOpacity
-                      onPress={() => status.isPlaying ? videoRef.current.pauseAsync() : videoRef.current.playAsync()}
-                    >
+                    <TouchableOpacity onPress={() => setStatus(prev => ({ ...prev, isPlaying: !prev.isPlaying }))}>
                       {status.isPlaying ? <Pause color="#fff" size={22} fill="#fff" /> : <Play color="#fff" size={22} fill="#fff" />}
                     </TouchableOpacity>
 
                     <View style={styles.volumeContainer}>
-                      <TouchableOpacity 
-                        onPress={() => {
-                          const newMuted = !isMuted;
-                          setIsMuted(newMuted);
-                          if (videoRef.current) videoRef.current.setIsMutedAsync(newMuted);
-                        }}
-                      >
+                      <TouchableOpacity onPress={() => setIsMuted(!isMuted)}>
                         {isMuted || volume === 0 ? <VolumeX color="#fff" size={20} /> : <Volume2 color="#fff" size={20} />}
                       </TouchableOpacity>
                       <Slider
@@ -382,12 +348,7 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
                         value={isMuted ? 0 : volume}
                         onValueChange={(v) => {
                           setVolume(v);
-                          const newMuted = v === 0;
-                          setIsMuted(newMuted);
-                          if (videoRef.current) {
-                            videoRef.current.setVolumeAsync(v);
-                            videoRef.current.setIsMutedAsync(newMuted);
-                          }
+                          setIsMuted(v === 0);
                         }}
                         minimumTrackTintColor="#fff"
                         maximumTrackTintColor="rgba(255,255,255,0.3)"
@@ -396,7 +357,7 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
                     </View>
 
                     <Text style={styles.timeText}>
-                      {formatTime(status.positionMillis)} / {formatTime(status.durationMillis)}
+                      {formatTime(seekingPosition !== null ? seekingPosition : status.positionMillis)} / {formatTime(status.durationMillis)}
                     </Text>
                   </View>
 
@@ -432,28 +393,6 @@ export default function VideoPlayer({ source, subtitleUrl, title, onBack, availa
           </View>
         </TouchableOpacity>
       )}
-
-      {currentSubtitleText !== '' && (
-        <View
-          style={[
-            styles.subtitleContainer,
-            { bottom: `${captionSettings.position}%` }
-          ]}
-        >
-          <Text
-            style={[
-              styles.subtitleText,
-              {
-                color: captionSettings.color,
-                fontSize: captionSettings.size === 'XS' ? 12 : captionSettings.size === 'S' ? 14 : captionSettings.size === 'M' ? 18 : captionSettings.size === 'L' ? 22 : 26,
-                backgroundColor: `rgba(0,0,0,${parseFloat(captionSettings.backgroundCapacity) / 100})`,
-              }
-            ]}
-          >
-            {currentSubtitleText}
-          </Text>
-        </View>
-      )}
     </View>
   );
 }
@@ -465,11 +404,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   fullscreenContainer: {
-    ...StyleSheet.absoluteFillObject,
+    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#000',
-    zIndex: 9999,
-    width: Platform.OS === 'web' ? '100vw' : '100%',
-    height: Platform.OS === 'web' ? '100vh' : '100%',
+    zIndex: 99999,
+    width: Platform.OS === 'web' ? '100vw' : Dimensions.get('screen').height,
+    height: Platform.OS === 'web' ? '100vh' : Dimensions.get('screen').width,
   },
   videoWrapper: {
     ...StyleSheet.absoluteFillObject,
@@ -485,11 +428,16 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  videoElementFullscreenNative: {
+    width: Dimensions.get('screen').height,
+    height: Dimensions.get('screen').width,
+  },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
   centerControls: {
     flexDirection: 'row',
@@ -587,19 +535,5 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 400,
     alignItems: 'center',
-  },
-  subtitleContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    pointerEvents: 'none',
-  },
-  subtitleText: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    textAlign: 'center',
-    fontWeight: '600',
   },
 });
